@@ -9,7 +9,7 @@ dotenv.config();
 import { GoogleGenerativeAI } from "@google/generative-ai" ;
 const app = express();
 
-const url = `https://ai-assisted-realtime-ide.onrender.com`;
+const url = `https://ai-assisted-realtime-ide-2nad.onrender.com`;
 const interval = 30000;
 
 function reloadWebsite() {

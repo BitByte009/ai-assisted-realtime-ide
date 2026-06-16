@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react';
 import Editor from '@monaco-editor/react';
 import Markdown from 'react-markdown';
 
-const socket = io('https://ai-assisted-realtime-ide-2nad.onrender.com/');
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || window.location.origin;
+const socket = io(SERVER_URL);
 
 const App = () => {
   const [joined, setJoined] = useState(false);

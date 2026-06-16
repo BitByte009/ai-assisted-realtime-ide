@@ -6,7 +6,7 @@ import axios from 'axios';
 import cors from 'cors';
 import dotenv from 'dotenv'
 dotenv.config();
-import { GoogleGenerativeAI } from "@google/generative-ai" ;
+
 const app = express();
 
 const url = `https://ai-assisted-realtime-ide-2nad.onrender.com`;
@@ -38,14 +38,13 @@ const io = new Server(server, {
     }
 });
 
-const apiKey = process.env.GEMINI_API_KEY;
-const genAI = new GoogleGenerativeAI(apiKey);
+const GEMINI_API_KEY = "AQ.Ab8RN6IfgVg1oJxHAOhb4F4-nBHUf2RvBWGUMCPFziB6NOkM0Q";
 
-const defaultVersions = {
-  cpp: "10.2.0",              // alias for "c++"
-  python3: "3.10.0",          // sent as "python" or "python3"
-  javascript: "18.15.0",      // for Node.js 
-  java: "15.0.2"
+const jdoodleLangMap = {
+  cpp:        { language: "cpp17",   versionIndex: "0" },
+  python3:    { language: "python3", versionIndex: "0" },
+  javascript: { language: "nodejs",  versionIndex: "0" },
+  java:       { language: "java",    versionIndex: "0" },
 };
 
 function detectLang(code) {
@@ -119,55 +118,50 @@ io.on('connection', (socket) => {
         roomData.get(roomId).language = language;
     });
 
-    socket.on("compileCode", async ({ code, roomId, language, version, stdin }) => {
+    socket.on("compileCode", async ({ code, roomId, language, stdin }) => {
     if (rooms.has(roomId)) {
-        console.log("CHECK2");
-        const room = rooms.get(roomId);
-
-        // Convert aliases if needed
-        const actualLang = (language === "cpp") ? "c++" :
-                        (language === "python3") ? "python" :
-                        language;
-
-        const actualVersion = (version === "*") ? defaultVersions[language] : version;
+        const langConfig = jdoodleLangMap[language] || { language: language, versionIndex: "0" };
 
         try {
-            const response = await axios.post("https://emkc.org/api/v2/piston/execute", {
-                language: actualLang,
-                version: actualVersion,
-                files: [{ content: code }],
-                stdin: stdin || ""
+            const response = await axios.post("https://api.jdoodle.com/v1/execute", {
+                clientId:     process.env.JDOODLE_CLIENT_ID,
+                clientSecret: process.env.JDOODLE_CLIENT_SECRET,
+                script:       code,
+                language:     langConfig.language,
+                versionIndex: langConfig.versionIndex,
+                stdin:        stdin || ""
             });
-            socket.emit("codeResponse", response.data);  // ✅ Only send to executor
+            socket.emit("codeResponse", {
+                run: { output: response.data.output }
+            });
         } catch (error) {
             socket.emit("codeResponse", {
-                    run: {
+                run: {
                     output: `Error: ${error.response?.data?.message || error.message}`
-                    }
-                });
-            }
+                }
+            });
         }
-    });
+    }
+});
 
     socket.on("getAIReview", async ({roomId, code}) => {
         try {
-
-            const model = genAI.getGenerativeModel({ model: "models/gemini-2.0-flash" });
-            const prompt = `
-            You're an expert code reviewer of the language "${detectLang(code)}" and love to give code suggestions. 
+            const prompt = `You're an expert code reviewer of the language "${detectLang(code)}" and love to give code suggestions. 
             Generate a brief review of the code "${code}".
             Format clearly with headings.
-            Give the response in proper format so that it comes in bulets
-            `;
-            // console.log("STARTING TO FETCH THE RESULT FROM THE AI");
-            const result = await model.generateContent(prompt);
-            // console.log("RESULT FETCHED");
-            const response = result.response;
-            const text = response.text();
+            Give the response in proper format so that it comes in bullets`;
 
+            const response = await axios.post(
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`,
+                { contents: [{ parts: [{ text: prompt }] }] },
+                { headers: { 'x-goog-api-key': GEMINI_API_KEY, 'Content-Type': 'application/json' } }
+            );
+
+            const text = response.data.candidates[0].content.parts[0].text;
             io.to(roomId).emit("AIReview", text);
         }
-        catch{
+        catch(err){
+            console.error("Gemini AI Error:", err?.response?.data || err?.message || err);
             io.to(roomId).emit("AIReview", "Unable to review currently please try later");
         }
     })
